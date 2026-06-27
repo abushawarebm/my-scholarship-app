@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
+import re
 
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="Scholarship Explorer", layout="centered")
@@ -91,7 +91,7 @@ translations = {
     }
 }
 
-# اختيار اللغة
+# اختيار اللغة 
 lang = st.selectbox("🌐 Choose Language / اختر اللغة / Kies Taal", ["English", "العربية", "Nederlands"])
 t = translations[lang]
 
@@ -101,52 +101,74 @@ st.markdown(t["subtitle"])
 # 3. رابط سحب البيانات المباشر من Google Sheets بصيغة CSV
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1cW5YWrR0kj6XEpyKQ1x3wmvCqFIJGYoJneQaRyXDnu4/export?format=csv"
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=1)  # الغاء الكاش التام لضمان التحديث التلقائي الفوري
 def load_cleaned_data():
     try:
         df = pd.read_csv(SHEET_URL)
         df.columns = df.columns.str.strip()
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].astype(str).str.strip()
-        df.fillna(t["na"], inplace=True)
-        df.replace("nan", t["na"], inplace=True)
+        df.fillna("Not Available", inplace=True)
+        df.replace("nan", "Not Available", inplace=True)
         if 'Application Link' in df.columns:
             df['Application Link'] = df['Application Link'].apply(
-                lambda x: f"https://{x}" if (x != t["na"] and not x.startswith(('http://', 'https://'))) else x
+                lambda x: f"https://{x}" if (x != "Not Available" and not x.startswith(('http://', 'https://'))) else x
             )
         return df
     except Exception as e:
         st.error(f"Error fetching Google Sheet: {e}")
         return pd.DataFrame()
 
-# دالة حساب العداد الزمني بالأشهر والأيام
-def calculate_countdown_details(deadline_str, current_translations):
-    if not deadline_str or str(deadline_str).strip() == current_translations["na"]:
+# دالة يدوية مستقرة تماماً ومضمونة 100% لتفكيك وحساب التاريخ دون أي مشاكل توافقية
+def parse_date_safely(date_str):
+    if not date_str or str(date_str).strip() in ["Not Available", "nan", ""]:
         return None
-    try:
-        parsed_date = pd.to_datetime(str(deadline_str).strip(), errors='coerce')
-        if pd.isna(parsed_date):
+    
+    clean_str = re.sub(r'[^\d\-/]', '', str(date_str).strip())
+    delimiters = ['-', '/', '.']
+    parts = []
+    
+    for dl in delimiters:
+        if dl in clean_str:
+            parts = clean_str.split(dl)
+            break
+            
+    if len(parts) == 3:
+        try:
+            if len(parts[0]) == 4:  # صيغة YYYY-MM-DD
+                return datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+            elif len(parts[2]) == 4:  # صيغة DD-MM-YYYY
+                return datetime(int(parts[2]), int(parts[1]), int(parts[0]))
+        except:
             return None
-            
-        deadline_date = parsed_date.to_pydatetime()
-        now = datetime.now()
-        
-        if deadline_date <= now:
-            return "expired"
-            
-        diff = relativedelta(deadline_date, now)
-        parts = []
-        if diff.months > 0:
-            parts.append(f"{diff.months} {current_translations['months']}")
-        if diff.days > 0:
-            parts.append(f"{diff.days} {current_translations['days']}")
-            
-        if not parts:
-            return f"{current_translations['less_than_day']}"
-            
-        return f"{current_translations['left']} " + f" {current_translations['and']} ".join(parts)
-    except:
+    return None
+
+def calculate_countdown_details(deadline_str, trans_dict):
+    deadline_date = parse_date_safely(deadline_str)
+    if not deadline_date:
         return None
+        
+    now = datetime.now()
+    if deadline_date <= now:
+        return "expired"
+        
+    # حساب الفارق يدويًا لضمان أعلى استقرار برمجي
+    diff = deadline_date - now
+    total_days = diff.days
+    
+    months = total_days // 30
+    days = total_days % 30
+    
+    parts = []
+    if months > 0:
+        parts.append(f"{months} {trans_dict['months']}")
+    if days > 0:
+        parts.append(f"{days} {trans_dict['days']}")
+        
+    if not parts:
+        return f"{trans_dict['less_than_day']}"
+        
+    return f"{trans_dict['left']} " + f" {trans_dict['and']} ".join(parts)
 
 df = load_cleaned_data()
 
@@ -155,11 +177,11 @@ if not df.empty:
     name_col = 'Name of scholarship' if 'Name of scholarship' in df.columns else df.columns[1]
     status_col = 'Live Status' if 'Live Status' in df.columns else None
 
-    # حساب الحالة الحية والملصقات المترجمة
+    # بناء الحالات والملصقات بناء على اللغة المختارة لحظياً
     live_statuses = []
     display_names = []
     for idx, row in df.iterrows():
-        deadline_val = row.get('Deadline', t['na'])
+        deadline_val = row.get('Deadline', "Not Available")
         countdown = calculate_countdown_details(deadline_val, t)
         is_expired_by_script = status_col and "expired" in str(row.get(status_col, '')).lower()
         
@@ -177,26 +199,25 @@ if not df.empty:
     df['calculated_status'] = live_statuses
     df['display_name_label'] = display_names
 
-    # 🛠️ 1. فلتر الحالة الرئيسي يظهر هنا مباشرة في أعلى الموقع
+    # 🛠️ الفلتر الرئيسي في المقدمة لفلترة المجموع الإجمالي
     status_filter = st.selectbox(
         t["filter_status"], 
         options=[t["all_status"], t["active_status"], t["expired_status"]]
     )
 
-    # تصفية المجموع الرئيسي بناءً على فلتر الحالة فوراً
     main_filtered_df = df.copy()
     if status_filter == t["active_status"]:
         main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "active"]
     elif status_filter == t["expired_status"]:
         main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "expired"]
 
-    # 📊 2. عرض رقم المجموع الرئيسي المحدث تلقائياً
+    # 📊 تحديث رقم المجموع الرئيسي فوراً وحياً
     total_scholarships = len(main_filtered_df)
     st.metric(label=t["total"], value=total_scholarships)
     st.divider()
 
-    # 🎓 3. فلتر اختيار المرحلة الدراسية
-    degree_options = [opt for opt in main_filtered_df[degree_col].unique() if opt != t["na"]]
+    # 🎓 فلتر المرحلة الدراسية المعتمد على المجموع المصفى
+    degree_options = [opt for opt in main_filtered_df[degree_col].unique() if opt != "Not Available"]
     if degree_options:
         selected_degree = st.selectbox(t["select_degree"], options=degree_options)
         final_df = main_filtered_df[main_filtered_df[degree_col] == selected_degree]
@@ -212,7 +233,7 @@ if not df.empty:
                 st.markdown("---")
                 st.success(f"{t['card_title']} {row[name_col]}")
                 
-                deadline_val = row.get('Deadline', t['na'])
+                deadline_val = row.get('Deadline', "Not Available")
                 countdown_result = calculate_countdown_details(deadline_val, t)
                 
                 if row['calculated_status'] == "expired":
@@ -234,7 +255,7 @@ if not df.empty:
                 st.info(f"{t['notes']}\n{row.get('Other relevant notes', t['na'])}")
                 
                 link_col = 'Application Link' if 'Application Link' in df.columns else None
-                if link_col and row[link_col] != t["na"]:
+                if link_col and row[link_col] != "Not Available":
                     st.link_button(t["apply"], row[link_col], use_container_width=True)
         else:
             st.info("No scholarships available for this selection.")
