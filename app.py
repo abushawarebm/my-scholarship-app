@@ -161,7 +161,7 @@ try:
     name_col = 'Name of scholarship' if 'Name of scholarship' in df.columns else df.columns[1]
     status_col = 'Live Status' if 'Live Status' in df.columns else None
 
-    # خطوة مسبقة: حساب الحالة والملصقات لكل الصفوف لتطبيق الفلتر الرئيسي أولاً
+    # حساب الحالة والملصقات لكل الصفوف (تم ضبط وتدقيق المسافات هنا بالكامل)
     live_statuses = []
     display_names = []
     for idx, row in df.iterrows():
@@ -175,3 +175,73 @@ try:
         else:
             current_status = "active"
             time_label = f" ({countdown})" if countdown else ""
+            label = f"🟢 {row[name_col]}{time_label}"
+            
+        live_statuses.append(current_status)
+        display_names.append(label)
+        
+    df['calculated_status'] = live_statuses
+    df['display_name_label'] = display_names
+
+    # 🛠️ 1. فلتر الحالة في البداية لتصفية المجموع الرئيسي
+    status_filter = st.selectbox(
+        t["filter_status"], 
+        options=[t["all_status"], t["active_status"], t["expired_status"]]
+    )
+
+    main_filtered_df = df.copy()
+    if status_filter == t["active_status"]:
+        main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "active"]
+    elif status_filter == t["expired_status"]:
+        main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "expired"]
+
+    # 📊 2. عرض رقم المجموع الرئيسي المحدث
+    total_scholarships = len(main_filtered_df)
+    st.metric(label=t["total"], value=total_scholarships)
+    st.divider()
+
+    # 🎓 3. فلتر اختيار المرحلة الدراسية
+    degree_options = [opt for opt in main_filtered_df[degree_col].unique() if opt != t["na"]]
+    selected_degree = st.selectbox(t["select_degree"], options=degree_options)
+
+    # التصفية النهائية
+    final_df = main_filtered_df[main_filtered_df[degree_col] == selected_degree]
+
+    st.subheader(f"{t['available_stage']} ({len(final_df)})")
+    
+    scholarship_options = final_df['display_name_label'].tolist()
+    selected_display_name = st.selectbox(t["select_card"], options=scholarship_options)
+
+    if selected_display_name:
+        row = final_df[final_df['display_name_label'] == selected_display_name].iloc[0]
+        
+        st.markdown("---")
+        st.success(f"{t['card_title']} {row[name_col]}")
+        
+        deadline_val = row.get('Deadline', t['na'])
+        countdown_result = calculate_countdown_details(deadline_val)
+        
+        if row['calculated_status'] == "expired":
+            st.error(t["expired"])
+        elif countdown_result:
+            st.metric(label=t["left"], value=countdown_result)
+            st.divider()
+            
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"{t['degree']} {row.get(degree_col, t['na'])}")
+            country_val = row.get('Country', row.get('Country ', t['na']))
+            st.write(f"{t['country']} {country_val}")
+            st.write(f"{t['deadline']} {deadline_val}")
+        with col2:
+            st.write(f"{t['coverage']} {row.get('Scholarship Coverage', t['na'])}")
+            st.write(f"{t['language']} {row.get('Language Proficiency', t['na'])}")
+            
+        st.info(f"{t['notes']}\n{row.get('Other relevant notes', t['na'])}")
+        
+        link_col = 'Application Link' if 'Application Link' in df.columns else None
+        if link_col and row[link_col] != t["na"]:
+            st.link_button(t["apply"], row[link_col], use_container_width=True)
+
+except Exception as e:
+    st.error(f"{t['error']} {e}")
