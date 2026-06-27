@@ -40,7 +40,7 @@ translations = {
         "total": "📊 إجمالي المنح المتاحة",
         "filter_status": "🔍 تصفية حسب حالة المنحة:",
         "all_status": "كل المنح",
-        "active_status": "🟢 النشطة فقط",
+        "active_status": "🟢  النشطة فقط",
         "expired_status": "🔴 المنتهية فقط",
         "select_degree": "اختر المرحلة الدراسية:",
         "available_stage": "المنح المتاحة المتوافقة مع الفلاتر",
@@ -80,7 +80,7 @@ translations = {
         "notes": "📝 Belangrijke Opmerkingen:",
         "apply": "🔗 Nu Solliciteren",
         "error": "Fout bij het laden van live gegevens van Google Sheets. Details:",
-        "na": "Niet BeschBbaar",
+        "na": "Niet Beschikbaar",
         "expired": "⚠️ Aanmelding gesloten / Verlopen",
         "months": "Maanden",
         "days": "Dagen",
@@ -115,7 +115,7 @@ def load_cleaned_data():
         )
     return df
 
-# دالة حساب العداد الزمني بالأشهر والأيام بدون نصوص إضافية للعداد الضخم
+# دالة حساب العداد الزمني بالأشهر والأيام
 def calculate_countdown_details(deadline_str):
     try:
         for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%d/%m/%Y'):
@@ -211,7 +211,6 @@ try:
         if row['calculated_status'] == "expired":
             st.error(t["expired"])
         elif countdown_result:
-            # هنا يظهر كم متبقي بخط كبير في مقدمة تفاصيل البطاقة
             st.metric(label=t["left"], value=f"⏳ {countdown_result}")
             st.divider()
             
@@ -233,4 +232,4 @@ try:
             st.link_button(t["apply"], row[link_col], use_container_width=True)
 
 except Exception as e:
-    st.error(f"{t['error']} {e
+    st.error(f"{t['error']} {e}")
