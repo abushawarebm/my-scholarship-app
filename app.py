@@ -11,7 +11,7 @@ translations = {
     "English": {
         "title": "🎓 Smart Scholarship Explorer",
         "subtitle": "Explore and filter available scholarships based on status and degree type.",
-        "total": "📊 Total Available Scholarships",
+        "total": "📊 Total Available Scholarships (Filtered)",
         "filter_status": "🔍 Filter by Scholarship Status:",
         "all_status": "All Scholarships",
         "active_status": "🟢 Active Only",
@@ -32,15 +32,17 @@ translations = {
         "expired": "⚠️ Application Closed / Expired",
         "months": "Months",
         "days": "Days",
-        "left": "Time Remaining"
+        "left": "Remaining:",
+        "and": "and",
+        "less_than_day": "Less than a day left"
     },
     "العربية": {
         "title": "🎓 مستكشف المنح الدراسية الذكي",
         "subtitle": "ابحث وتصفح المنح الدراسية المتاحة مع تصفية حية حسب الحالة والمرحلة الدراسية.",
-        "total": "📊 إجمالي المنح المتاحة",
-        "filter_status": "🔍 تصفية حسب حالة المنحة:",
+        "total": "📊 إجمالي المنح المتاحة (المصفاة)",
+        "filter_status": "🔍 تصفية حسب حالة المنحة من البداية:",
         "all_status": "كل المنح",
-        "active_status": "🟢  النشطة فقط",
+        "active_status": "🟢 النشطة فقط",
         "expired_status": "🔴 المنتهية فقط",
         "select_degree": "اختر المرحلة الدراسية:",
         "available_stage": "المنح المتاحة المتوافقة مع الفلاتر",
@@ -58,12 +60,14 @@ translations = {
         "expired": "⚠️ انتهى التقديم / أُغلقت المنحة رسمياً",
         "months": "شهر",
         "days": "يوم",
-        "left": "الوقت المتبقي لانتهاء التقديم"
+        "left": "متبقي:",
+        "and": "و",
+        "less_than_day": "أقل من يوم متبقي"
     },
     "Nederlands": {
         "title": "🎓 Slimme Beurzenzoeker",
         "subtitle": "Bekijk en filter beschikbare beurzen op basis van status en studieniveau.",
-        "total": "📊 Totaal Aantal Beschikbare Beurzen",
+        "total": "📊 Totaal Aantal Beschikbare Beurzen (Gefilterd)",
         "filter_status": "🔍 Filter op Beursstatus:",
         "all_status": "Alle Beurzen",
         "active_status": "🟢 Alleen Actief",
@@ -84,7 +88,9 @@ translations = {
         "expired": "⚠️ Aanmelding gesloten / Verlopen",
         "months": "Maanden",
         "days": "Dagen",
-        "left": "Resterende Tijd"
+        "left": "Resterend:",
+        "and": "en",
+        "less_than_day": "Minder dan een dag over"
     }
 }
 
@@ -117,8 +123,10 @@ def load_cleaned_data():
 
 # دالة حساب العداد الزمني بالأشهر والأيام
 def calculate_countdown_details(deadline_str):
+    if not deadline_str or deadline_str == t["na"]:
+        return None
     try:
-        for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%d/%m/%Y'):
+        for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d'):
             try:
                 deadline_date = datetime.strptime(deadline_str, fmt)
                 break
@@ -140,32 +148,20 @@ def calculate_countdown_details(deadline_str):
             parts.append(f"{diff.days} {t['days']}")
             
         if not parts:
-            return "⏳ أقل من يوم"
+            return f"{t['less_than_day']}"
             
-        return " و ".join(parts)
+        return f"{t['left']} " + f" {t['and']} ".join(parts)
     except:
         return None
 
 try:
     df = load_cleaned_data()
-    
-    total_scholarships = len(df)
-    st.metric(label=t["total"], value=total_scholarships)
-    st.divider()
 
     degree_col = 'Degree Type' if 'Degree Type' in df.columns else df.columns[0]
     name_col = 'Name of scholarship' if 'Name of scholarship' in df.columns else df.columns[1]
     status_col = 'Live Status' if 'Live Status' in df.columns else None
 
-    # إضافة فلاتر التحكم
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        status_filter = st.selectbox(t["filter_status"], options=[t["all_status"], t["active_status"], t["expired_status"]])
-    with col_f2:
-        degree_options = [opt for opt in df[degree_col].unique() if opt != t["na"]]
-        selected_degree = st.selectbox(t["select_degree"], options=degree_options)
-
-    # حساب الحالة الحية والملصقات
+    # خطوة مسبقة: حساب الحالة والملصقات لكل الصفوف لتطبيق الفلتر الرئيسي أولاً
     live_statuses = []
     display_names = []
     for idx, row in df.iterrows():
@@ -178,58 +174,4 @@ try:
             label = f"🔴 {row[name_col]} ({t['expired']})"
         else:
             current_status = "active"
-            label = f"🟢 {row[name_col]} (⏳ متبقي {countdown if countdown else ''})"
-            
-        live_statuses.append(current_status)
-        display_names.append(label)
-        
-    df['calculated_status'] = live_statuses
-    df['display_name_label'] = display_names
-
-    # تصفية البيانات
-    filtered_df = df[df[degree_col] == selected_degree]
-    if status_filter == t["active_status"]:
-        filtered_df = filtered_df[filtered_df['calculated_status'] == "active"]
-    elif status_filter == t["expired_status"]:
-        filtered_df = filtered_df[filtered_df['calculated_status'] == "expired"]
-
-    st.subheader(f"{t['available_stage']} ({len(filtered_df)})")
-    
-    scholarship_options = filtered_df['display_name_label'].tolist()
-    selected_display_name = st.selectbox(t["select_card"], options=scholarship_options)
-
-    if selected_display_name:
-        row = filtered_df[filtered_df['display_name_label'] == selected_display_name].iloc[0]
-        
-        st.markdown("---")
-        st.success(f"{t['card_title']} {row[name_col]}")
-        
-        # ⏱️ عرض العداد الزمني بشكل ضخم واحترافي داخل البطاقة
-        deadline_val = row.get('Deadline', t['na'])
-        countdown_result = calculate_countdown_details(deadline_val)
-        
-        if row['calculated_status'] == "expired":
-            st.error(t["expired"])
-        elif countdown_result:
-            st.metric(label=t["left"], value=f"⏳ {countdown_result}")
-            st.divider()
-            
-        # تفاصيل المنحة في أعمدة
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"{t['degree']} {row.get(degree_col, t['na'])}")
-            country_val = row.get('Country', row.get('Country ', t['na']))
-            st.write(f"{t['country']} {country_val}")
-            st.write(f"{t['deadline']} {deadline_val}")
-        with col2:
-            st.write(f"{t['coverage']} {row.get('Scholarship Coverage', t['na'])}")
-            st.write(f"{t['language']} {row.get('Language Proficiency', t['na'])}")
-            
-        st.info(f"{t['notes']}\n{row.get('Other relevant notes', t['na'])}")
-        
-        link_col = 'Application Link' if 'Application Link' in df.columns else None
-        if link_col and row[link_col] != t["na"]:
-            st.link_button(t["apply"], row[link_col], use_container_width=True)
-
-except Exception as e:
-    st.error(f"{t['error']} {e}")
+            time_label = f" ({countdown})" if countdown else ""
