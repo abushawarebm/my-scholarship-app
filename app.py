@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="Scholarship Explorer", layout="centered")
 
-# 2. قاموس الترجمة للغات الثلاث
+# 2. قاموس الترجمة للغات الثلاث (تم تدقيق النصوص بالكامل)
 translations = {
     "English": {
         "title": "🎓 Smart Scholarship Explorer",
@@ -29,7 +29,7 @@ translations = {
         "apply": "🔗 Apply Now",
         "error": "Error loading live data from Google Sheets. Details:",
         "na": "Not Available",
-        "expired": "⚠️ Application Closed / Expired",
+        "expired": "Expired / Closed",
         "months": "Months",
         "days": "Days",
         "left": "Remaining:",
@@ -57,7 +57,7 @@ translations = {
         "apply": "🔗 قدم الآن",
         "error": "حدث خطأ أثناء تحميل البيانات المباشرة من جداول جوجل. التفاصيل:",
         "na": "غير متوفر",
-        "expired": "⚠️ انتهى التقديم / أُغلقت المنحة رسمياً",
+        "expired": "منتهية / مغلقة",
         "months": "شهر",
         "days": "يوم",
         "left": "متبقي:",
@@ -85,7 +85,7 @@ translations = {
         "apply": "🔗 Nu Solliciteren",
         "error": "Fout bij het laden van live gegevens van Google Sheets. Details:",
         "na": "Niet Beschikbaar",
-        "expired": "⚠️ Aanmelding gesloten / Verlopen",
+        "expired": "Verlopen / Gesloten",
         "months": "Maanden",
         "days": "Dagen",
         "left": "Resterend:",
@@ -121,18 +121,41 @@ def load_cleaned_data():
         )
     return df
 
-# دالة حساب العداد الزمني بالأشهر والأيام
-def calculate_countdown_details(deadline_str):
-    if not deadline_str or deadline_str == t["na"]:
+# دالة حساب العداد الزمني مع دعم شامل ومرن جداً لكل أنواع صيغ التاريخ النصية والرقمية
+def calculate_countdown_details(deadline_str, current_translations):
+    if not deadline_str or deadline_str == current_translations["na"]:
         return None
+    
+    # محاولة تنظيف النص وتحويل الشهور المكتوبة نصياً بالإنجليزية إلى أرقام إذا وجدت
+    months_map = {"january": "01", "february": "02", "march": "03", "april": "04", "may": "05", "june": "06",
+                  "july": "07", "august": "08", "september": "09", "october": "10", "november": "11", "december": "12",
+                  "jan": "01", "feb": "02", "mar": "03", "apr": "04", "jun": "06", "jul": "07", "aug": "08", "sep": "09", "oct": "10", "nov": "11", "dec": "12"}
+    
+    clean_str = str(deadline_str).lower().strip()
+    for m_name, m_num in months_map.items():
+        if m_name in clean_str:
+            clean_str = clean_str.replace(m_name, m_num)
+            
+    # قائمة بجميع صيغ التواريخ الممكن إدخالها في جداول البيانات
+    date_formats = (
+        '%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d',
+        '%d %m %Y', '%Y %m %d', '%b %d, %Y', '%B %d, %Y', '%d %b %Y', '%d %B %Y'
+    )
+    
     try:
-        for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d'):
+        deadline_date = None
+        for fmt in date_formats:
             try:
-                deadline_date = datetime.strptime(deadline_str, fmt)
+                deadline_date = datetime.strptime(clean_str, fmt)
                 break
             except ValueError:
-                continue
-        else:
+                try:
+                    deadline_date = datetime.strptime(str(deadline_str).strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+                    
+        if deadline_date is None:
             return None 
             
         now = datetime.now()
@@ -143,14 +166,14 @@ def calculate_countdown_details(deadline_str):
         
         parts = []
         if diff.months > 0:
-            parts.append(f"{diff.months} {t['months']}")
+            parts.append(f"{diff.months} {current_translations['months']}")
         if diff.days > 0:
-            parts.append(f"{diff.days} {t['days']}")
+            parts.append(f"{diff.days} {current_translations['days']}")
             
         if not parts:
-            return f"{t['less_than_day']}"
+            return f"{current_translations['less_than_day']}"
             
-        return f"{t['left']} " + f" {t['and']} ".join(parts)
+        return f"{current_translations['left']} " + f" {current_translations['and']} ".join(parts)
     except:
         return None
 
@@ -161,12 +184,18 @@ try:
     name_col = 'Name of scholarship' if 'Name of scholarship' in df.columns else df.columns[1]
     status_col = 'Live Status' if 'Live Status' in df.columns else None
 
-    # حساب الحالة والملصقات لكل الصفوف (تم ضبط وتدقيق المسافات هنا بالكامل)
+    # 🛠️ 1. فلتر الحالة الرئيسي يظهر أولاً لفلترة المجموع الرئيسي
+    status_filter = st.selectbox(
+        t["filter_status"], 
+        options=[t["all_status"], t["active_status"], t["expired_status"]]
+    )
+
+    # حساب الحالة التلقائية والملصقات المترجمة لكل منحة بناءً على اللغة المحددة حالياً
     live_statuses = []
     display_names = []
     for idx, row in df.iterrows():
         deadline_val = row.get('Deadline', t['na'])
-        countdown = calculate_countdown_details(deadline_val)
+        countdown = calculate_countdown_details(deadline_val, t)
         is_expired_by_script = status_col and "expired" in str(row.get(status_col, '')).lower()
         
         if is_expired_by_script or countdown == "expired":
@@ -183,28 +212,23 @@ try:
     df['calculated_status'] = live_statuses
     df['display_name_label'] = display_names
 
-    # 🛠️ 1. فلتر الحالة في البداية لتصفية المجموع الرئيسي
-    status_filter = st.selectbox(
-        t["filter_status"], 
-        options=[t["all_status"], t["active_status"], t["expired_status"]]
-    )
-
+    # تصفية المجموع الرئيسي بناءً على الفلتر الأول
     main_filtered_df = df.copy()
     if status_filter == t["active_status"]:
         main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "active"]
     elif status_filter == t["expired_status"]:
         main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "expired"]
 
-    # 📊 2. عرض رقم المجموع الرئيسي المحدث
+    # 📊 2. عرض رقم المجموع الرئيسي المحدث بشكل حي
     total_scholarships = len(main_filtered_df)
     st.metric(label=t["total"], value=total_scholarships)
     st.divider()
 
-    # 🎓 3. فلتر اختيار المرحلة الدراسية
+    # 🎓 3. فلتر اختيار المرحلة الدراسية (يعتمد على المجموع المصفى)
     degree_options = [opt for opt in main_filtered_df[degree_col].unique() if opt != t["na"]]
     selected_degree = st.selectbox(t["select_degree"], options=degree_options)
 
-    # التصفية النهائية
+    # التصفية النهائية للمرحلة المختارة
     final_df = main_filtered_df[main_filtered_df[degree_col] == selected_degree]
 
     st.subheader(f"{t['available_stage']} ({len(final_df)})")
@@ -219,7 +243,7 @@ try:
         st.success(f"{t['card_title']} {row[name_col]}")
         
         deadline_val = row.get('Deadline', t['na'])
-        countdown_result = calculate_countdown_details(deadline_val)
+        countdown_result = calculate_countdown_details(deadline_val, t)
         
         if row['calculated_status'] == "expired":
             st.error(t["expired"])
@@ -227,6 +251,7 @@ try:
             st.metric(label=t["left"], value=countdown_result)
             st.divider()
             
+        # تفاصيل المنحة المترجمة في أعمدة
         col1, col2 = st.columns(2)
         with col1:
             st.write(f"{t['degree']} {row.get(degree_col, t['na'])}")
@@ -244,4 +269,4 @@ try:
             st.link_button(t["apply"], row[link_col], use_container_width=True)
 
 except Exception as e:
-    st.error(f"{t['error']} {e}")
+    st.error(f"Error loading live data: {e}")
