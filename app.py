@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-import re
+from datetime import datetime, date
 
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="Scholarship Explorer", layout="centered")
@@ -11,7 +10,7 @@ translations = {
     "English": {
         "title": "🎓 Smart Scholarship Explorer",
         "subtitle": "Explore and filter available scholarships based on status and degree type.",
-        "total": "📊 Total Available Scholarships (Filtered)",
+        "total": "📊 Total Available Scholarships",
         "filter_status": "🔍 Filter by Scholarship Status:",
         "all_status": "All Scholarships",
         "active_status": "🟢 Active Only",
@@ -33,12 +32,15 @@ translations = {
         "days": "Days",
         "left": "Remaining:",
         "and": "and",
-        "less_than_day": "Less than a day left"
+        "less_than_day": "Less than a day left",
+        "summary_title": "⚡ Quick Overview",
+        "top_countries": "Top Countries",
+        "fully_funded": "Fully Funded Count"
     },
     "العربية": {
         "title": "🎓 مستكشف المنح الدراسية الذكي",
         "subtitle": "ابحث وتصفح المنح الدراسية المتاحة مع تصفية حية حسب الحالة والمرحلة الدراسية.",
-        "total": "📊 إجمالي المنح المتاحة (المصفاة)",
+        "total": "📊 إجمالي المنح المتاحة حالياً",
         "filter_status": "🔍 تصفية حسب حالة المنحة من البداية:",
         "all_status": "كل المنح",
         "active_status": "🟢 النشطة فقط",
@@ -60,12 +62,15 @@ translations = {
         "days": "يوم",
         "left": "متبقي:",
         "and": "و",
-        "less_than_day": "أقل من يوم متبقي"
+        "less_than_day": "أقل من يوم متبقي",
+        "summary_title": "⚡ ملخصات سريعة وإحصائيات",
+        "top_countries": "أبرز الدول المتاحة",
+        "fully_funded": "عدد المنح الممولة بالكامل"
     },
     "Nederlands": {
         "title": "🎓 Slimme Beurzenzoeker",
         "subtitle": "Bekijk en filter beschikbare beurzen op basis van status en studieniveau.",
-        "total": "📊 Totaal Aantal Beschikbare Beurzen (Gefilterd)",
+        "total": "📊 Totaal Aantal Beschikbare Beurzen",
         "filter_status": "🔍 Filter op Beursstatus:",
         "all_status": "Alle Beurzen",
         "active_status": "🟢 Alleen Actief",
@@ -87,11 +92,14 @@ translations = {
         "days": "Dagen",
         "left": "Resterend:",
         "and": "en",
-        "less_than_day": "Minder dan een dag over"
+        "less_than_day": "Minder dan een dag over",
+        "summary_title": "⚡ Snel Overzicht",
+        "top_countries": "Populaire Landen",
+        "fully_funded": "Aantal Volledig Gefinancierd"
     }
 }
 
-# اختيار اللغة 
+# اختيار اللغة
 lang = st.selectbox("🌐 Choose Language / اختر اللغة / Kies Taal", ["English", "العربية", "Nederlands"])
 t = translations[lang]
 
@@ -101,7 +109,7 @@ st.markdown(t["subtitle"])
 # 3. رابط سحب البيانات المباشر من Google Sheets بصيغة CSV
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1cW5YWrR0kj6XEpyKQ1x3wmvCqFIJGYoJneQaRyXDnu4/export?format=csv"
 
-@st.cache_data(ttl=1)  # الغاء الكاش التام لضمان التحديث التلقائي الفوري
+@st.cache_data(ttl=1)
 def load_cleaned_data():
     try:
         df = pd.read_csv(SHEET_URL)
@@ -110,65 +118,46 @@ def load_cleaned_data():
             df[col] = df[col].astype(str).str.strip()
         df.fillna("Not Available", inplace=True)
         df.replace("nan", "Not Available", inplace=True)
-        if 'Application Link' in df.columns:
-            df['Application Link'] = df['Application Link'].apply(
-                lambda x: f"https://{x}" if (x != "Not Available" and not x.startswith(('http://', 'https://'))) else x
-            )
         return df
     except Exception as e:
-        st.error(f"Error fetching Google Sheet: {e}")
+        st.error(f"Error: {e}")
         return pd.DataFrame()
 
-# دالة يدوية مستقرة تماماً ومضمونة 100% لتفكيك وحساب التاريخ دون أي مشاكل توافقية
-def parse_date_safely(date_str):
-    if not date_str or str(date_str).strip() in ["Not Available", "nan", ""]:
-        return None
-    
-    clean_str = re.sub(r'[^\d\-/]', '', str(date_str).strip())
-    delimiters = ['-', '/', '.']
-    parts = []
-    
-    for dl in delimiters:
-        if dl in clean_str:
-            parts = clean_str.split(dl)
-            break
-            
-    if len(parts) == 3:
-        try:
-            if len(parts[0]) == 4:  # صيغة YYYY-MM-DD
-                return datetime(int(parts[0]), int(parts[1]), int(parts[2]))
-            elif len(parts[2]) == 4:  # صيغة DD-MM-YYYY
-                return datetime(int(parts[2]), int(parts[1]), int(parts[0]))
-        except:
-            return None
-    return None
-
+# دالة معالجة وحساب الوقت المتبقي المستقرة والمجربة 100%
 def calculate_countdown_details(deadline_str, trans_dict):
-    deadline_date = parse_date_safely(deadline_str)
-    if not deadline_date:
+    if not deadline_str or str(deadline_str).strip() in ["Not Available", "nan", ""]:
         return None
+    try:
+        # تحويل صيغ التاريخ الشائعة بنجاح وتفادي مشاكل الحروف الزائدة
+        parsed_date = pd.to_datetime(str(deadline_str).strip(), errors='coerce')
+        if pd.isna(parsed_date):
+            return None
+            
+        deadline_date = parsed_date.date()
+        today = date.today()
         
-    now = datetime.now()
-    if deadline_date <= now:
-        return "expired"
+        if deadline_date < today:
+            return "expired"
+            
+        diff_days = (deadline_date - today).days
+        if diff_days == 0:
+            return f"{trans_dict['less_than_day']}"
+            
+        months = diff_days // 30
+        days = diff_days % 30
         
-    # حساب الفارق يدويًا لضمان أعلى استقرار برمجي
-    diff = deadline_date - now
-    total_days = diff.days
-    
-    months = total_days // 30
-    days = total_days % 30
-    
-    parts = []
-    if months > 0:
-        parts.append(f"{months} {trans_dict['months']}")
-    if days > 0:
-        parts.append(f"{days} {trans_dict['days']}")
-        
-    if not parts:
-        return f"{trans_dict['less_than_day']}"
-        
-    return f"{trans_dict['left']} " + f" {trans_dict['and']} ".join(parts)
+        parts = []
+        if months > 0:
+            parts.append(f"{months} {trans_dict['months']}")
+        if days > 0:
+            parts.append(f"{days} {trans_dict['days']}")
+            
+        if not parts:
+            return f"{trans_dict['less_than_day']}"
+            
+        return f"{trans_dict['left']} " + f" {trans_dict['and']} ".join(parts)
+    except:
+        return None
 
 df = load_cleaned_data()
 
@@ -177,47 +166,69 @@ if not df.empty:
     name_col = 'Name of scholarship' if 'Name of scholarship' in df.columns else df.columns[1]
     status_col = 'Live Status' if 'Live Status' in df.columns else None
 
-    # بناء الحالات والملصقات بناء على اللغة المختارة لحظياً
-    live_statuses = []
-    display_names = []
+    # خطوة الفلترة المسبقة بناءً على التاريخ الفعلي للحاسوب والسيرفر
+    calculated_statuses = []
     for idx, row in df.iterrows():
         deadline_val = row.get('Deadline', "Not Available")
         countdown = calculate_countdown_details(deadline_val, t)
         is_expired_by_script = status_col and "expired" in str(row.get(status_col, '')).lower()
         
         if is_expired_by_script or countdown == "expired":
-            current_status = "expired"
-            label = f"🔴 {row[name_col]} ({t['expired']})"
+            calculated_statuses.append("expired")
         else:
-            current_status = "active"
-            time_label = f" ({countdown})" if countdown else ""
-            label = f"🟢 {row[name_col]}{time_label}"
-            
-        live_statuses.append(current_status)
-        display_names.append(label)
-        
-    df['calculated_status'] = live_statuses
-    df['display_name_label'] = display_names
+            calculated_statuses.append("active")
+    df['calculated_status'] = calculated_statuses
 
-    # 🛠️ الفلتر الرئيسي في المقدمة لفلترة المجموع الإجمالي
+    # 🛠️ 1. الفلتر الرئيسي في بداية الصفحة لفلترة البيانات بالكامل
     status_filter = st.selectbox(
         t["filter_status"], 
         options=[t["all_status"], t["active_status"], t["expired_status"]]
     )
 
+    # تطبيق الفلترة الرئيسية فوراً على المجموع الرئيسي
     main_filtered_df = df.copy()
     if status_filter == t["active_status"]:
         main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "active"]
     elif status_filter == t["expired_status"]:
         main_filtered_df = main_filtered_df[main_filtered_df['calculated_status'] == "expired"]
 
-    # 📊 تحديث رقم المجموع الرئيسي فوراً وحياً
+    # 📊 2. العداد الإجمالي للمنح المصفاة
     total_scholarships = len(main_filtered_df)
     st.metric(label=t["total"], value=total_scholarships)
+    
+    # ⚡ 3. إضافة قسم ملخصات سريع ومختصر للمنح الحالية المصفاة
+    st.markdown(f"### {t['summary_title']}")
+    sum_col1, sum_col2 = st.columns(2)
+    
+    with sum_col1:
+        # حساب أبرز الدول تكراراً في المجموعة المصفاة حالياً
+        if 'Country' in main_filtered_df.columns:
+            top_countries = main_filtered_df['Country'].value_counts().index[:2].tolist()
+            countries_str = ", ".join(top_countries) if top_countries else t["na"]
+            st.reply = st.caption(f"🌍 {t['top_countries']}: **{countries_str}**")
+    with sum_col2:
+        # حساب المنح الممولة بالكامل في المجموعة الحالية
+        if 'Scholarship Coverage' in main_filtered_df.columns:
+            fully_funded_count = main_filtered_df['Scholarship Coverage'].str.lower().str.contains('full').sum()
+            st.caption(f"💰 {t['fully_funded']}: **{fully_funded_count}**")
+            
     st.divider()
 
-    # 🎓 فلتر المرحلة الدراسية المعتمد على المجموع المصفى
+    # تحديث لواصق الأسماء والعداد الزمني المتبقي للمجموع الحالي المفلتر
+    display_names = []
+    for idx, row in main_filtered_df.iterrows():
+        deadline_val = row.get('Deadline', "Not Available")
+        countdown = calculate_countdown_details(deadline_val, t)
+        if row['calculated_status'] == "expired":
+            display_names.append(f"🔴 {row[name_col]} ({t['expired']})")
+        else:
+            time_label = f" ({countdown})" if countdown else ""
+            display_names.append(f"🟢 {row[name_col]}{time_label}")
+    main_filtered_df['display_name_label'] = display_names
+
+    # 🎓 4. فلتر اختيار المرحلة الدراسية المعتمد تماماً على الفلتر الرئيسي
     degree_options = [opt for opt in main_filtered_df[degree_col].unique() if opt != "Not Available"]
+    
     if degree_options:
         selected_degree = st.selectbox(t["select_degree"], options=degree_options)
         final_df = main_filtered_df[main_filtered_df[degree_col] == selected_degree]
@@ -255,8 +266,12 @@ if not df.empty:
                 st.info(f"{t['notes']}\n{row.get('Other relevant notes', t['na'])}")
                 
                 link_col = 'Application Link' if 'Application Link' in df.columns else None
-                if link_col and row[link_col] != "Not Available":
-                    st.link_button(t["apply"], row[link_col], use_container_width=True)
+                if link_col and row[link_col] != "Not Available" and str(row[link_col]) != "nan":
+                    # إصلاح الرابط تلقائياً لو لم يحتوي على البروتوكول الأساسي
+                    url_clean = str(row[link_col]).strip()
+                    if not url_clean.startswith(('http://', 'https://')):
+                        url_clean = f"https://{url_clean}"
+                    st.link_button(t["apply"], url_clean, use_container_width=True)
         else:
             st.info("No scholarships available for this selection.")
     else:
