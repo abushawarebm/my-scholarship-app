@@ -1,18 +1,23 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="Scholarship Explorer", layout="centered")
 
-# 2. قاموس الترجمة للغات الثلاث (تم تصحيح الأخطاء النصية)
+# 2. قاموس الترجمة للغات الثلاث
 translations = {
     "English": {
         "title": "🎓 Smart Scholarship Explorer",
-        "subtitle": "Explore and filter available scholarships based on your degree type.",
+        "subtitle": "Explore and filter available scholarships based on status and degree type.",
         "total": "📊 Total Available Scholarships",
+        "filter_status": "🔍 Filter by Scholarship Status:",
+        "all_status": "All Scholarships",
+        "active_status": "🟢 Active Only",
+        "expired_status": "🔴 Expired Only",
         "select_degree": "Select Degree Type:",
-        "available_stage": "Available Scholarships for this stage",
+        "available_stage": "Available Scholarships matching your filters",
         "select_card": "Click below to open a Detailed Card:",
         "card_title": "📜 Scholarship Detailed Card:",
         "degree": "🎓 Degree Type:",
@@ -24,17 +29,21 @@ translations = {
         "apply": "🔗 Apply Now",
         "error": "Error loading live data from Google Sheets. Details:",
         "na": "Not Available",
-        "days_left": "Time Remaining:",
+        "expired": "⚠️ Application Closed / Expired",
+        "months": "Months",
         "days": "Days",
-        "hours": "Hours",
-        "expired": "⚠️ Application Closed / Expired"
+        "left": "Time Remaining"
     },
     "العربية": {
         "title": "🎓 مستكشف المنح الدراسية الذكي",
-        "subtitle": "ابحث وتصفح المنح الدراسية المتاحة بناءً على المرحلة الدراسية مع التحديثات الحية.",
+        "subtitle": "ابحث وتصفح المنح الدراسية المتاحة مع تصفية حية حسب الحالة والمرحلة الدراسية.",
         "total": "📊 إجمالي المنح المتاحة",
+        "filter_status": "🔍 تصفية حسب حالة المنحة:",
+        "all_status": "كل المنح",
+        "active_status": "🟢 النشطة فقط",
+        "expired_status": "🔴 المنتهية فقط",
         "select_degree": "اختر المرحلة الدراسية:",
-        "available_stage": "المنح المتاحة لهذه المرحلة",
+        "available_stage": "المنح المتاحة المتوافقة مع الفلاتر",
         "select_card": "اضغط هنا لاختيار منحة وعرض بطاقة التفاصيل:",
         "card_title": "📜 بطاقة تفاصيل المنحة:",
         "degree": "🎓 المرحلة الدراسية:",
@@ -46,17 +55,21 @@ translations = {
         "apply": "🔗 قدم الآن",
         "error": "حدث خطأ أثناء تحميل البيانات المباشرة من جداول جوجل. التفاصيل:",
         "na": "غير متوفر",
-        "days_left": "الوقت المتبقي لانتهاء التقديم:",
-        "days": "أيام",
-        "hours": "ساعة",
-        "expired": "⚠️ انتهى التقديم / أُغلقت المنحة رسمياً"
+        "expired": "⚠️ انتهى التقديم / أُغلقت المنحة رسمياً",
+        "months": "شهر",
+        "days": "يوم",
+        "left": "الوقت المتبقي لانتهاء التقديم"
     },
     "Nederlands": {
         "title": "🎓 Slimme Beurzenzoeker",
-        "subtitle": "Bekijk en filter beschikbare beurzen op basis van je studieniveau.",
+        "subtitle": "Bekijk en filter beschikbare beurzen op basis van status en studieniveau.",
         "total": "📊 Totaal Aantal Beschikbare Beurzen",
+        "filter_status": "🔍 Filter op Beursstatus:",
+        "all_status": "Alle Beurzen",
+        "active_status": "🟢 Alleen Actief",
+        "expired_status": "🔴 Alleen Verlopen",
         "select_degree": "Selecteer Studieniveau:",
-        "available_stage": "Beschikbare beurzen voor dit niveau",
+        "available_stage": "Beschikbare beurzen die aan de filters voldoen",
         "select_card": "Klik hieronder om een gedetailleerde kaart te openen:",
         "card_title": "📜 Gedetailleerde Beurzenkaart:",
         "degree": "🎓 Studieniveau:",
@@ -67,11 +80,11 @@ translations = {
         "notes": "📝 Belangrijke Opmerkingen:",
         "apply": "🔗 Nu Solliciteren",
         "error": "Fout bij het laden van live gegevens van Google Sheets. Details:",
-        "na": "Niet Beschikbaar",
-        "days_left": "Resterende tijd:",
+        "na": "Niet BeschBbaar",
+        "expired": "⚠️ Aanmelding gesloten / Verlopen",
+        "months": "Maanden",
         "days": "Dagen",
-        "hours": "Uur",
-        "expired": "⚠️ Aanmelding gesloten / Verlopen"
+        "left": "Resterende Tijd"
     }
 }
 
@@ -102,8 +115,8 @@ def load_cleaned_data():
         )
     return df
 
-# دالة حساب العداد الزمني المتبقي للمنحة
-def calculate_countdown(deadline_str):
+# دالة حساب العداد الزمني بالأشهر والأيام بدون نصوص إضافية للعداد الضخم
+def calculate_countdown_details(deadline_str):
     try:
         for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%d/%m/%Y'):
             try:
@@ -115,14 +128,21 @@ def calculate_countdown(deadline_str):
             return None 
             
         now = datetime.now()
-        time_left = deadline_date - now
-        
-        if time_left.total_seconds() <= 0:
+        if deadline_date <= now:
             return "expired"
+            
+        diff = relativedelta(deadline_date, now)
         
-        days = time_left.days
-        hours = time_left.seconds // 3600
-        return f"⏳ {t['days_left']} {days} {t['days']} و {hours} {t['hours']}"
+        parts = []
+        if diff.months > 0:
+            parts.append(f"{diff.months} {t['months']}")
+        if diff.days > 0:
+            parts.append(f"{diff.days} {t['days']}")
+            
+        if not parts:
+            return "⏳ أقل من يوم"
+            
+        return " و ".join(parts)
     except:
         return None
 
@@ -137,31 +157,65 @@ try:
     name_col = 'Name of scholarship' if 'Name of scholarship' in df.columns else df.columns[1]
     status_col = 'Live Status' if 'Live Status' in df.columns else None
 
-    degree_options = [opt for opt in df[degree_col].unique() if opt != t["na"]]
-    selected_degree = st.selectbox(t["select_degree"], options=degree_options)
+    # إضافة فلاتر التحكم
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        status_filter = st.selectbox(t["filter_status"], options=[t["all_status"], t["active_status"], t["expired_status"]])
+    with col_f2:
+        degree_options = [opt for opt in df[degree_col].unique() if opt != t["na"]]
+        selected_degree = st.selectbox(t["select_degree"], options=degree_options)
 
+    # حساب الحالة الحية والملصقات
+    live_statuses = []
+    display_names = []
+    for idx, row in df.iterrows():
+        deadline_val = row.get('Deadline', t['na'])
+        countdown = calculate_countdown_details(deadline_val)
+        is_expired_by_script = status_col and "expired" in str(row.get(status_col, '')).lower()
+        
+        if is_expired_by_script or countdown == "expired":
+            current_status = "expired"
+            label = f"🔴 {row[name_col]} ({t['expired']})"
+        else:
+            current_status = "active"
+            label = f"🟢 {row[name_col]} (⏳ متبقي {countdown if countdown else ''})"
+            
+        live_statuses.append(current_status)
+        display_names.append(label)
+        
+    df['calculated_status'] = live_statuses
+    df['display_name_label'] = display_names
+
+    # تصفية البيانات
     filtered_df = df[df[degree_col] == selected_degree]
+    if status_filter == t["active_status"]:
+        filtered_df = filtered_df[filtered_df['calculated_status'] == "active"]
+    elif status_filter == t["expired_status"]:
+        filtered_df = filtered_df[filtered_df['calculated_status'] == "expired"]
+
     st.subheader(f"{t['available_stage']} ({len(filtered_df)})")
     
-    scholarship_list = filtered_df[name_col].tolist()
-    selected_scholarship = st.selectbox(t["select_card"], options=scholarship_list)
+    scholarship_options = filtered_df['display_name_label'].tolist()
+    selected_display_name = st.selectbox(t["select_card"], options=scholarship_options)
 
-    if selected_scholarship:
-        row = filtered_df[filtered_df[name_col] == selected_scholarship].iloc[0]
+    if selected_display_name:
+        row = filtered_df[filtered_df['display_name_label'] == selected_display_name].iloc[0]
         
         st.markdown("---")
         st.success(f"{t['card_title']} {row[name_col]}")
         
+        # ⏱️ عرض العداد الزمني بشكل ضخم واحترافي داخل البطاقة
         deadline_val = row.get('Deadline', t['na'])
-        countdown_result = calculate_countdown(deadline_val)
+        countdown_result = calculate_countdown_details(deadline_val)
         
-        is_expired_by_script = status_col and "expired" in str(row.get(status_col, '')).lower()
-        
-        if is_expired_by_script or countdown_result == "expired":
+        if row['calculated_status'] == "expired":
             st.error(t["expired"])
         elif countdown_result:
-            st.warning(countdown_result)
+            # هنا يظهر كم متبقي بخط كبير في مقدمة تفاصيل البطاقة
+            st.metric(label=t["left"], value=f"⏳ {countdown_result}")
+            st.divider()
             
+        # تفاصيل المنحة في أعمدة
         col1, col2 = st.columns(2)
         with col1:
             st.write(f"{t['degree']} {row.get(degree_col, t['na'])}")
@@ -179,4 +233,4 @@ try:
             st.link_button(t["apply"], row[link_col], use_container_width=True)
 
 except Exception as e:
-    st.error(f"{t['error']} {e}")
+    st.error(f"{t['error']} {e
