@@ -4,7 +4,7 @@ import pandas as pd
 # 1. Page Configuration
 st.set_page_config(page_title="Scholarship Explorer", layout="centered")
 
-# 2. Translation Dictionary (عربي, English, Nederlands)
+# 2. Translation Dictionary (English, العربية, Nederlands)
 translations = {
     "English": {
         "title": "🎓 Smart Scholarship Explorer",
@@ -21,7 +21,7 @@ translations = {
         "language": "🗣️ Language Proficiency:",
         "notes": "📝 Relevant Notes:",
         "apply": "🔗 Apply Now",
-        "error": "Make sure 'Book2.csv' exists in your GitHub repository. Error details:"
+        "error": "Error loading live data from Google Sheets. Details:"
     },
     "العربية": {
         "title": "🎓 مستكشف المنح الدراسية الذكي",
@@ -38,7 +38,7 @@ translations = {
         "language": "🗣️ الشروط اللغوية:",
         "notes": "📝 ملاحظات هامة:",
         "apply": "🔗 قدم الآن",
-        "error": "تأكد من وجود ملف 'Book2.csv' في مستودع جيتهاب الخاص بك. تفاصيل الخطأ:"
+        "error": "حدث خطأ أثناء تحميل البيانات المباشرة من جداول جوجل. التفاصيل:"
     },
     "Nederlands": {
         "title": "🎓 Slimme Beurzenzoeker",
@@ -55,33 +55,32 @@ translations = {
         "language": "🗣️ Taalvaardigheid:",
         "notes": "📝 Belangrijke Opmerkingen:",
         "apply": "🔗 Nu Solliciteren",
-        "error": "Zorg ervoor dat 'Book2.csv' bestaat in je GitHub-repository. Foutdetails:"
+        "error": "Fout bij het laden van live gegevens van Google Sheets. Details:"
     }
 }
 
-# 3. Language Selector Sidebar/Top
 lang = st.selectbox("🌐 Choose Language / اختر اللغة / Kies Taal", ["English", "العربية", "Nederlands"])
 t = translations[lang]
 
 st.title(t["title"])
 st.markdown(t["subtitle"])
 
-# 4. Load CSV File
-@st.cache_data
+# 3. 🔗 رابط ملف Google Sheets الخاص بك بعد تحويله لصيغة CSV التلقائية
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1cW5YWrR0kj6XEpyKQ1x3wmvCqFIJGYoJneQaRyXDnu4/export?format=csv"
+
+@st.cache_data(ttl=60) # تحديث تلقائي كل 60 ثانية في حال عدلت على الجدول
 def load_data():
-    df = pd.read_csv("Book2.csv")
+    df = pd.read_csv(SHEET_URL)
     return df
 
 try:
     df = load_data()
     
-    # Summary Metric
     total_scholarships = len(df)
     st.metric(label=t["total"], value=total_scholarships)
     
     st.divider()
 
-    # Degree Filter
     degree_options = df['Degree Type'].dropna().unique().tolist()
     selected_degree = st.selectbox(t["select_degree"], options=degree_options)
 
@@ -89,11 +88,9 @@ try:
     
     st.subheader(f"{t['available_stage']} ({len(filtered_df)})")
     
-    # Scholarship Selector
     scholarship_list = filtered_df['Name of scholarship'].tolist()
     selected_scholarship = st.selectbox(t["select_card"], options=scholarship_list)
 
-    # Detailed Card Display
     if selected_scholarship:
         row = filtered_df[filtered_df['Name of scholarship'] == selected_scholarship].iloc[0]
         
